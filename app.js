@@ -28,7 +28,7 @@ const MANDATORIUM_GENTLE_ALPHA = 0.5;              // sqrt seat growth
 const MANDATORIUM_SEAT_CAP = 9999;                 // optional cap
 
 const roundHalfUp = (x) => Math.round(x);
-const ceilDiv = (a, b) => Math.floor((a + b - 1) / b);
+const ceilDiv = (a, b) => Math.ceil(a / b);
 
 const MAX_ASCENDIUM_VOTING_SEATS = 100000000;
 
