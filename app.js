@@ -11,6 +11,13 @@ const detailsEl = document.getElementById('result-details');
 
 const preferredMagnitudes = [5, 4, 6];
 
+// Valid STV constituency sizes (remainder values that can stand alone as a constituency)
+const STV_VALID_MAGNITUDES = [3, 4, 5, 6];
+// Small remainder counts that must be absorbed by downgrading larger constituencies
+const STV_SMALL_REMAINDERS = [1, 2];
+
+const MAX_CITIZENS = 10_000_000_000;
+
 const MANDATORIUM_BASE_CITIZENS_PER_SEAT = 300000;
 
 // Low-pop soft curve anchor: 300 seats at exactly 90,000,000 citizens
@@ -62,7 +69,7 @@ const chooseStvPlan = (totalSeats, preferred = preferredMagnitudes) => {
       return { magnitudeCounts, constituencyCount, note: `mixed plan base ${base} (exact)` };
     }
 
-    if ([3, 4, 5, 6].includes(r)) {
+    if (STV_VALID_MAGNITUDES.includes(r)) {
       magnitudeCounts[r] = (magnitudeCounts[r] || 0) + 1;
       constituencyCount += 1;
       return {
@@ -73,14 +80,14 @@ const chooseStvPlan = (totalSeats, preferred = preferredMagnitudes) => {
     }
 
     let conversions = 0;
-    while ([1, 2].includes(r) && conversions < k0) {
+    while (STV_SMALL_REMAINDERS.includes(r) && conversions < k0) {
       magnitudeCounts[base] -= 1;
       magnitudeCounts[base - 1] = (magnitudeCounts[base - 1] || 0) + 1;
       conversions += 1;
       r += 1;
     }
 
-    if ([3, 4, 5, 6].includes(r)) {
+    if (STV_VALID_MAGNITUDES.includes(r)) {
       magnitudeCounts[r] = (magnitudeCounts[r] || 0) + 1;
       constituencyCount += 1;
       return {
@@ -349,12 +356,7 @@ const renderMandatorium = (result) => {
         <strong>Plan note:</strong> ${result.stvPlanNote}<br>
         <strong>Magnitude distribution:</strong> ${describeMagnitudes(result.stvMagnitudeCounts)}
         ${targetTable(result.stvTargets)}
-    metricCard(
-      'Citizens / Popular Seat',
-      Number.isFinite(result.citizensPerPopularSeat)
-        ? format(result.citizensPerPopularSeat, 2)
-        : '∞'
-    ),
+      </div>
     </details>
   `;
 };
@@ -366,7 +368,7 @@ const renderAscendium = (result) => {
     metricCard('Vocational Seats (V)', format(result.vocationalSeats)),
     metricCard('Diarchic Seats (D)', format(result.diarchicSeats)),
     metricCard('Hereditary Seats (H)', format(result.hereditarySeats)),
-    metricCard('Citizens / Popular Seat', format(result.citizensPerPopularSeat, 2)),
+    metricCard('Citizens / Popular Seat', Number.isFinite(result.citizensPerPopularSeat) ? format(result.citizensPerPopularSeat, 2) : '∞'),
   ].join('');
 
   const regimeExplanation = result.regime.startsWith('A')
@@ -414,8 +416,8 @@ form.addEventListener('submit', (event) => {
   const mode = getMode();
   const citizens = Number(citizensInput.value);
 
-  if (!Number.isInteger(citizens) || citizens < 1) {
-    errorEl.textContent = 'Please enter a valid integer for total citizens.';
+  if (!Number.isInteger(citizens) || citizens < 1 || citizens > MAX_CITIZENS) {
+    errorEl.textContent = `Please enter a valid integer for total citizens (1 to ${format(MAX_CITIZENS)}).`;
     resultsEl.hidden = true;
     return;
   }
@@ -447,6 +449,7 @@ const drawer = document.getElementById('nav-drawer');
 const backdrop = document.getElementById('drawer-backdrop');
 const closeDrawerBtn = document.getElementById('close-drawer');
 let lastFocused = null;
+let trapFocusActive = false;
 
 const trapFocus = (event) => {
   if (event.key !== 'Tab' || drawer.getAttribute('aria-hidden') === 'true') return;
@@ -463,12 +466,19 @@ const trapFocus = (event) => {
   }
 };
 
+const handleEscKey = (event) => {
+  if (event.key === 'Escape' && drawer.getAttribute('aria-hidden') === 'false') closeDrawer();
+};
+
 const closeDrawer = () => {
   drawer.classList.remove('open');
   drawer.setAttribute('aria-hidden', 'true');
   backdrop.hidden = true;
   menuBtn.setAttribute('aria-expanded', 'false');
-  document.removeEventListener('keydown', trapFocus);
+  if (trapFocusActive) {
+    document.removeEventListener('keydown', trapFocus);
+    trapFocusActive = false;
+  }
   if (lastFocused) lastFocused.focus();
 };
 
@@ -480,14 +490,15 @@ const openDrawer = () => {
   menuBtn.setAttribute('aria-expanded', 'true');
   const firstLink = drawer.querySelector('a, button');
   if (firstLink) firstLink.focus();
-  document.addEventListener('keydown', trapFocus);
+  if (!trapFocusActive) {
+    document.addEventListener('keydown', trapFocus);
+    trapFocusActive = true;
+  }
 };
 
 if (menuBtn && drawer && backdrop && closeDrawerBtn) {
   menuBtn.addEventListener('click', openDrawer);
   closeDrawerBtn.addEventListener('click', closeDrawer);
   backdrop.addEventListener('click', closeDrawer);
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && drawer.getAttribute('aria-hidden') === 'false') closeDrawer();
-  });
+  document.addEventListener('keydown', handleEscKey);
 }
