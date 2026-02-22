@@ -30,22 +30,23 @@ const MANDATORIUM_SEAT_CAP = 9999;                 // optional cap
 const roundHalfUp = (x) => Math.round(x);
 const ceilDiv = (a, b) => Math.floor((a + b - 1) / b);
 
-const summariseMagnitudes = (mags) => {
-  const map = {};
-  mags.forEach((m) => {
-    map[m] = (map[m] || 0) + 1;
-  });
-  return Object.fromEntries(Object.entries(map).sort((a, b) => Number(a[0]) - Number(b[0])));
-};
+const MAX_ASCENDIUM_VOTING_SEATS = 100000000;
+
+const sortMagnitudeCounts = (counts) => Object.fromEntries(
+  Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+);
 
 const chooseStvPlan = (totalSeats, preferred = preferredMagnitudes) => {
   if (totalSeats === 0) {
-    return { magnitudes: [], note: 'no STV seats' };
+    return { magnitudeCounts: {}, constituencyCount: 0, note: 'no STV seats' };
   }
 
   for (const m of preferred) {
     if (m > 0 && totalSeats % m === 0) {
-      return { magnitudes: Array(totalSeats / m).fill(m), note: `uniform ${m}-seat STV constituencies` };
+      const magnitudeCounts = { [m]: totalSeats / m };
+      return { magnitudeCounts, constituencyCount: magnitudeCounts[m], note: `uniform ${m}-seat STV constituencies` };
     }
   }
 
@@ -54,40 +55,48 @@ const chooseStvPlan = (totalSeats, preferred = preferredMagnitudes) => {
 
     const k0 = Math.floor(totalSeats / base);
     let r = totalSeats - base * k0;
-    const mags = Array(k0).fill(base);
+    const magnitudeCounts = { [base]: k0 };
+    let constituencyCount = k0;
 
     if (r === 0) {
-      return { magnitudes: mags, note: `mixed plan base ${base} (exact)` };
+      return { magnitudeCounts, constituencyCount, note: `mixed plan base ${base} (exact)` };
     }
 
     if ([3, 4, 5, 6].includes(r)) {
-      mags.push(r);
-      return { magnitudes: mags, note: `mixed plan base ${base} + one ${r}-seat constituency` };
+      magnitudeCounts[r] = (magnitudeCounts[r] || 0) + 1;
+      constituencyCount += 1;
+      return {
+        magnitudeCounts: sortMagnitudeCounts(magnitudeCounts),
+        constituencyCount,
+        note: `mixed plan base ${base} + one ${r}-seat constituency`,
+      };
     }
 
     let conversions = 0;
-    while ([1, 2].includes(r) && conversions < mags.length) {
-      mags[conversions] = base - 1;
+    while ([1, 2].includes(r) && conversions < k0) {
+      magnitudeCounts[base] -= 1;
+      magnitudeCounts[base - 1] = (magnitudeCounts[base - 1] || 0) + 1;
       conversions += 1;
       r += 1;
     }
 
     if ([3, 4, 5, 6].includes(r)) {
-      mags.push(r);
+      magnitudeCounts[r] = (magnitudeCounts[r] || 0) + 1;
+      constituencyCount += 1;
       return {
-        magnitudes: mags,
+        magnitudeCounts: sortMagnitudeCounts(magnitudeCounts),
+        constituencyCount,
         note: `mixed plan base ${base} with ${conversions} downgraded constituencies + one ${r}-seat constituency`,
       };
     }
   }
 
-  return { magnitudes: [totalSeats], note: 'fallback: single STV constituency (not recommended)' };
+  return { magnitudeCounts: { [totalSeats]: 1 }, constituencyCount: 1, note: 'fallback: single STV constituency (not recommended)' };
 };
 
-const stvTargetsByMagnitude = (citizens, stvSeatsTotal, magnitudes) => {
+const stvTargetsByMagnitude = (citizens, stvSeatsTotal, counts) => {
   if (stvSeatsTotal <= 0) return {};
   const cps = citizens / stvSeatsTotal;
-  const counts = summariseMagnitudes(magnitudes);
   const out = {};
 
   Object.entries(counts).forEach(([m, count]) => {
@@ -99,6 +108,11 @@ const stvTargetsByMagnitude = (citizens, stvSeatsTotal, magnitudes) => {
   });
 
   return out;
+};
+
+const describeMagnitudes = (counts) => {
+  const parts = Object.entries(sortMagnitudeCounts(counts)).map(([magnitude, count]) => `${count}×${magnitude}`);
+  return parts.length ? parts.join(', ') : 'None';
 };
 
 const mandatoriumSeatCount = (citizens) => {
@@ -165,7 +179,7 @@ const calcMandatorium = (citizens) => {
   const S_L = roundHalfUp(0.3 * S);
   const S_D = S - S_L;
 
-  const { magnitudes, note } = chooseStvPlan(S_D);
+  const { magnitudeCounts, constituencyCount, note } = chooseStvPlan(S_D);
 
   return {
     citizens,
@@ -188,11 +202,10 @@ const calcMandatorium = (citizens) => {
     citizensPerPrConstituency: citizens,
 
     stvSeats: S_D,
-    stvConstituencies: magnitudes.length,
+    stvConstituencies: constituencyCount,
     stvPlanNote: note,
-    stvMagnitudes: magnitudes,
-    stvCountsByMagnitude: summariseMagnitudes(magnitudes),
-    stvTargets: stvTargetsByMagnitude(citizens, S_D, magnitudes),
+    stvMagnitudeCounts: magnitudeCounts,
+    stvTargets: stvTargetsByMagnitude(citizens, S_D, magnitudeCounts),
   };
 };
 
@@ -238,7 +251,7 @@ const ascendiumAllocation = (N) => {
 
 const calcAscendium = (citizens, votingSeats) => {
   const { P, V, D, H, regime } = ascendiumAllocation(votingSeats);
-  const { magnitudes, note } = chooseStvPlan(P);
+  const { magnitudeCounts, constituencyCount, note } = chooseStvPlan(P);
   const initialD = Math.max(33, Math.floor((votingSeats - 34) / 5));
 
   return {
@@ -254,11 +267,10 @@ const calcAscendium = (citizens, votingSeats) => {
     p0Base: votingSeats < 200 ? votingSeats - 4 * Math.floor(votingSeats / 6) : null,
     transferToPopular: votingSeats < 200 ? Math.max(0, (2 * Math.floor(votingSeats / 6)) - (votingSeats - 4 * Math.floor(votingSeats / 6)) + 1) : 0,
     citizensPerPopularSeat: P > 0 ? citizens / P : Infinity,
-    popularStvConstituencies: magnitudes.length,
+    popularStvConstituencies: constituencyCount,
     popularStvPlanNote: note,
-    popularStvMagnitudes: magnitudes,
-    popularStvCountsByMagnitude: summariseMagnitudes(magnitudes),
-    popularStvTargets: stvTargetsByMagnitude(citizens, P, magnitudes),
+    popularStvMagnitudeCounts: magnitudeCounts,
+    popularStvTargets: stvTargetsByMagnitude(citizens, P, magnitudeCounts),
   };
 };
 
@@ -335,7 +347,7 @@ const renderMandatorium = (result) => {
       <summary>STV constituency plan</summary>
       <div class="details-content">
         <strong>Plan note:</strong> ${result.stvPlanNote}<br>
-        <strong>Magnitude distribution:</strong> ${result.stvMagnitudes.join(', ') || 'None'}
+        <strong>Magnitude distribution:</strong> ${describeMagnitudes(result.stvMagnitudeCounts)}
         ${targetTable(result.stvTargets)}
       </div>
     </details>
@@ -367,7 +379,7 @@ const renderAscendium = (result) => {
       <summary>Popular-seat planning aid (STV)</summary>
       <div class="details-content">
         <strong>Popular STV plan:</strong> ${result.popularStvPlanNote}<br>
-        <strong>Magnitudes:</strong> ${result.popularStvMagnitudes.join(', ') || 'None'}
+        <strong>Magnitudes:</strong> ${describeMagnitudes(result.popularStvMagnitudeCounts)}
         ${targetTable(result.popularStvTargets)}
       </div>
     </details>
@@ -411,6 +423,9 @@ form.addEventListener('submit', (event) => {
       const votingSeats = Number(votingSeatsInput.value);
       if (!Number.isInteger(votingSeats) || votingSeats < 1) {
         throw new Error('Please enter a valid integer for Ascendium voting seats (N).');
+      }
+      if (votingSeats > MAX_ASCENDIUM_VOTING_SEATS) {
+        throw new Error(`Ascendium voting seats (N) must be ${format(MAX_ASCENDIUM_VOTING_SEATS)} or fewer.`);
       }
       const result = calcAscendium(citizens, votingSeats);
       renderAscendium(result);
