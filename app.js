@@ -349,7 +349,12 @@ const renderMandatorium = (result) => {
         <strong>Plan note:</strong> ${result.stvPlanNote}<br>
         <strong>Magnitude distribution:</strong> ${describeMagnitudes(result.stvMagnitudeCounts)}
         ${targetTable(result.stvTargets)}
-      </div>
+    metricCard(
+      'Citizens / Popular Seat',
+      Number.isFinite(result.citizensPerPopularSeat)
+        ? format(result.citizensPerPopularSeat, 2)
+        : '∞'
+    ),
     </details>
   `;
 };
