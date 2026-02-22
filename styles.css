@@ -6,6 +6,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -39,6 +40,13 @@ button:focus-visible {
 }
 .menu-btn { width: 2.4rem; height: 2.4rem; }
 
+.menu-btn:focus-visible,
+.close-drawer:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .header-text { text-align: center; }
 .header-text h1 { margin: 0; font-size: 1.25rem; line-height: 1.1; }
 .header-text p { margin: 0.2rem 0 0; font-size: 0.95rem; color: #4c4139; }
@@ -51,6 +59,8 @@ button:focus-visible {
   left: 0;
   inset: 0;
   background: rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  z-index: 100;
 }
 
 .nav-drawer {
@@ -65,6 +75,7 @@ button:focus-visible {
   gap: 0.7rem;
   transform: translateX(-102%);
   transition: transform .2s ease;
+  z-index: 101;
 }
 .nav-drawer.open { transform: translateX(0); }
 .nav-drawer a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--border); padding-bottom: .3rem; }
