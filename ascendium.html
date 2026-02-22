@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ascendium | Public Electoral Apportionment Calculator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <button id="menu-btn" class="menu-btn" aria-label="Open navigation menu" aria-controls="nav-drawer" aria-expanded="false">☰</button>
+      <div class="header-text">
+        <h1>Public Electoral Apportionment Calculator for the Parliament of the Diarchic Empire of Lyrophia</h1>
+        <p>By ELECO, the Electoral Integrity Office of the Supranational Authority for Fairness and Ethics</p>
+      </div>
+    </header>
+
+    <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+    <nav id="nav-drawer" class="nav-drawer" aria-label="Primary" aria-hidden="true">
+      <a href="mandatorium.html">Mandatorium</a>
+      <a href="ascendium.html">Ascendium</a>
+      <button id="close-drawer" class="close-drawer">Close</button>
+    </nav>
+
+    <main class="page-layout">
+      <section class="panel">
+        <h2>Ascendium Calculator</h2>
+        <form id="calc-form">
+          <fieldset class="mode-switch">
+            <legend>Calculator mode</legend>
+            <label for="mode-mandatorium"><input id="mode-mandatorium" type="radio" name="mode" value="mandatorium" /> Mandatorium</label>
+            <label for="mode-ascendium"><input id="mode-ascendium" type="radio" name="mode" value="ascendium" checked /> Ascendium</label>
+          </fieldset>
+
+          <label for="citizens">Total citizens</label>
+          <input id="citizens" type="number" min="1" step="1" required />
+
+          <div id="voting-seats-field">
+            <label for="voting-seats">Ascendium voting seats (N)</label>
+            <input id="voting-seats" type="number" min="1" step="1" required />
+          </div>
+
+          <div class="button-row">
+            <button type="button" id="sample-btn">Use sample values</button>
+            <button type="submit">Calculate</button>
+          </div>
+        </form>
+        <p id="error" class="error" role="alert"></p>
+      </section>
+
+      <section id="results" class="panel" hidden>
+        <h2>Results</h2>
+        <div id="result-summary" class="metrics"></div>
+        <div id="result-details" class="details"></div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
