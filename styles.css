@@ -30,6 +30,13 @@ body {
   color: var(--text);
   padding: 0.35rem 0.6rem;
 }
+
+.menu-btn:focus-visible,
+.close-drawer:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
 .menu-btn { width: 2.4rem; height: 2.4rem; }
 
 .header-text { text-align: center; }
