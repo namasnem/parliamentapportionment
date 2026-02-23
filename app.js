@@ -20,6 +20,14 @@ const MAX_CITIZENS = 10_000_000_000;
 
 const MANDATORIUM_C0 = 30000000;
 const MANDATORIUM_S0 = 400;
+const MANDATORIUM_LOW_CEILING = 65000000;
+const MANDATORIUM_TRANSITION_TOP = 90000000;
+const MANDATORIUM_LOW_RATIO_AT_CEILING = 75000;
+const MANDATORIUM_LOW_RATIO_AT_FLOOR = 60000;
+const MANDATORIUM_LOW_FLOOR_POPULATION = 5000000;
+const MANDATORIUM_LOW_CURVE_EXPONENT = 1.4;
+const MANDATORIUM_TRANSITION_RATIO_AT_TOP = 300000;
+const MANDATORIUM_LOW_MIN_RATIO = 30000;
 const MANDATORIUM_C1 = 150000000;
 const MANDATORIUM_C2 = 600000000;
 const MANDATORIUM_RMID = 300000;
@@ -118,11 +126,15 @@ const mandatoriumSeatCount = (citizens) => {
   const S1 = ceilDiv(MANDATORIUM_C1, MANDATORIUM_RMID);
   const S2 = ceilDiv(MANDATORIUM_C2, MANDATORIUM_RMID);
 
-  if (C <= MANDATORIUM_C1) {
-    const slope = (S1 - MANDATORIUM_S0) / (MANDATORIUM_C1 - MANDATORIUM_C0);
-    const seats = Math.ceil(MANDATORIUM_S0 + slope * (C - MANDATORIUM_C0));
+  if (C <= MANDATORIUM_LOW_CEILING) {
+    const lowSpan = MANDATORIUM_LOW_CEILING - MANDATORIUM_LOW_FLOOR_POPULATION;
+    const progress = Math.max(0, Math.min(1, (C - MANDATORIUM_LOW_FLOOR_POPULATION) / lowSpan));
+    const curvedProgress = progress ** MANDATORIUM_LOW_CURVE_EXPONENT;
+    const targetRatio = MANDATORIUM_LOW_RATIO_AT_FLOOR + curvedProgress * (MANDATORIUM_LOW_RATIO_AT_CEILING - MANDATORIUM_LOW_RATIO_AT_FLOOR);
+    const seats = ceilDiv(C, Math.max(MANDATORIUM_LOW_MIN_RATIO, Math.round(targetRatio)));
+
     return {
-      regime: 'L (low linear)',
+      regime: 'L (progressive low ratio)',
       totalSeats: Math.max(1, seats),
       C0: MANDATORIUM_C0,
       S0: MANDATORIUM_S0,
@@ -132,7 +144,28 @@ const mandatoriumSeatCount = (citizens) => {
       S2,
       Rmid: MANDATORIUM_RMID,
       Rhi: MANDATORIUM_RHI,
-      slopeSeatsPerCitizen: slope,
+      targetRatio,
+    };
+  }
+
+  if (C <= MANDATORIUM_TRANSITION_TOP) {
+    const transitionSpan = MANDATORIUM_TRANSITION_TOP - MANDATORIUM_LOW_CEILING;
+    const progress = (C - MANDATORIUM_LOW_CEILING) / transitionSpan;
+    const targetRatio = MANDATORIUM_LOW_RATIO_AT_CEILING + progress * (MANDATORIUM_TRANSITION_RATIO_AT_TOP - MANDATORIUM_LOW_RATIO_AT_CEILING);
+    const seats = ceilDiv(C, Math.round(targetRatio));
+
+    return {
+      regime: 'LM (65M→90M transition)',
+      totalSeats: Math.max(1, seats),
+      C0: MANDATORIUM_C0,
+      S0: MANDATORIUM_S0,
+      C1: MANDATORIUM_C1,
+      C2: MANDATORIUM_C2,
+      S1,
+      S2,
+      Rmid: MANDATORIUM_RMID,
+      Rhi: MANDATORIUM_RHI,
+      targetRatio,
     };
   }
 
@@ -316,11 +349,13 @@ const renderMandatorium = (result) => {
     metricCard('Citizens / PR Seat', Number.isFinite(result.citizensPerPrSeat) ? format(result.citizensPerPrSeat, 2) : '∞'),
   ].join('');
 
-  const regimeExplanation = result.regime.startsWith('L')
-    ? `Regime L applies the low linear segment for C=${format(result.citizens)}. It linearly interpolates between (${format(result.C0)}, ${format(result.S0)}) and (${format(result.C1)}, ${format(result.S1)}) with slope ${(result.slopeSeatsPerCitizen ?? 0).toExponential(6)} seats per citizen, then rounds up to ${format(result.totalMandators)} seats.`
-    : result.regime.startsWith('M')
-      ? `Regime M applies the middle band rule directly: ceil(C / ${format(result.Rmid)}) = ${format(result.totalMandators)} seats.`
-      : `Regime H applies the high segment: start from S2=${format(result.S2)} at C2=${format(result.C2)} and add ${format(result.extraSeatsAboveC2 || 0)} seat(s) using ceil((C - C2) / ${format(result.Rhi)}), for a total of ${format(result.totalMandators)} seats.`;
+  const regimeExplanation = result.regime === 'L (progressive low ratio)'
+    ? `Regime L applies a progressive low-population ratio for C=${format(result.citizens)} up to ${format(MANDATORIUM_LOW_CEILING)} with a gentle slope below ${format(MANDATORIUM_LOW_CEILING)}. The target citizens-per-mandator ratio decreases gradually (around ${format(result.targetRatio || 0, 2)} at this population), then seats are computed as ceil(C / ratio) = ${format(result.totalMandators)}.`
+    : result.regime === 'LM (65M→90M transition)'
+      ? `Regime LM applies the transition band from ${format(MANDATORIUM_LOW_CEILING)} to ${format(MANDATORIUM_TRANSITION_TOP)} citizens. In this segment the ratio rises toward ${format(MANDATORIUM_TRANSITION_RATIO_AT_TOP)} citizens/seat (around ${format(result.targetRatio || 0, 2)} here), giving ${format(result.totalMandators)} seats.`
+      : result.regime.startsWith('M')
+        ? `Regime M applies the middle band rule directly: ceil(C / ${format(result.Rmid)}) = ${format(result.totalMandators)} seats.`
+        : `Regime H applies the high segment: start from S2=${format(result.S2)} at C2=${format(result.C2)} and add ${format(result.extraSeatsAboveC2 || 0)} seat(s) using ceil((C - C2) / ${format(result.Rhi)}), for a total of ${format(result.totalMandators)} seats.`;
 
   detailsEl.innerHTML = `
     <div class="callout">
