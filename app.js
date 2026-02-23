@@ -152,7 +152,11 @@ const mandatoriumSeatCount = (citizens) => {
     const transitionSpan = MANDATORIUM_TRANSITION_TOP - MANDATORIUM_LOW_CEILING;
     const progress = (C - MANDATORIUM_LOW_CEILING) / transitionSpan;
     const targetRatio = MANDATORIUM_LOW_RATIO_AT_CEILING + progress * (MANDATORIUM_TRANSITION_RATIO_AT_TOP - MANDATORIUM_LOW_RATIO_AT_CEILING);
-    const seats = ceilDiv(C, Math.round(targetRatio));
+    const seatsAtLowCeiling = ceilDiv(
+      MANDATORIUM_LOW_CEILING,
+      Math.max(MANDATORIUM_LOW_MIN_RATIO, Math.round(MANDATORIUM_LOW_RATIO_AT_CEILING))
+    );
+    const seats = Math.max(seatsAtLowCeiling, ceilDiv(C, Math.round(targetRatio)));
 
     return {
       regime: 'LM (65M→90M transition)',
