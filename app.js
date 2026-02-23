@@ -18,24 +18,14 @@ const STV_SMALL_REMAINDERS = [1, 2];
 
 const MAX_CITIZENS = 10_000_000_000;
 
-const MANDATORIUM_BASE_CITIZENS_PER_SEAT = 300000;
+const MANDATORIUM_C0 = 30000000;
+const MANDATORIUM_S0 = 400;
+const MANDATORIUM_C1 = 150000000;
+const MANDATORIUM_C2 = 600000000;
+const MANDATORIUM_RMID = 300000;
+const MANDATORIUM_RHI = 600000;
 
-// Low-pop soft curve anchor: 300 seats at exactly 90,000,000 citizens
-const MANDATORIUM_LOW_ANCHOR_SEATS = 300;
-const MANDATORIUM_LOW_ANCHOR_CITIZENS = MANDATORIUM_LOW_ANCHOR_SEATS * MANDATORIUM_BASE_CITIZENS_PER_SEAT;
-
-// Controls how gently seats fall below 300 when C < 90,000,000
-// beta = 0 => almost flat 300
-// beta = 1 => linear (same as base rule)
-const MANDATORIUM_LOW_BETA = 0.7;
-
-// High-pop gentle growth
-const MANDATORIUM_HIGH_ANCHOR_CITIZENS = 750000000; // must be > 600M
-const MANDATORIUM_GENTLE_ALPHA = 0.5;              // sqrt seat growth
-const MANDATORIUM_SEAT_CAP = 9999;                 // optional cap
-
-const roundHalfUp = (x) => Math.round(x);
-const ceilDiv = (a, b) => Math.ceil(a / b);
+const ceilDiv = (a, b) => Math.floor((a + b - 1) / b);
 
 const MAX_ASCENDIUM_VOTING_SEATS = 100000000;
 
@@ -123,59 +113,57 @@ const describeMagnitudes = (counts) => {
 };
 
 const mandatoriumSeatCount = (citizens) => {
-  const linearSeats = ceilDiv(citizens, MANDATORIUM_BASE_CITIZENS_PER_SEAT);
-  const highAnchorSeats = ceilDiv(MANDATORIUM_HIGH_ANCHOR_CITIZENS, MANDATORIUM_BASE_CITIZENS_PER_SEAT);
+  const C = citizens;
 
-  // Regime L: soft low-pop curve (no flat S=300)
-  if (citizens < MANDATORIUM_LOW_ANCHOR_CITIZENS) {
-    const x = citizens / MANDATORIUM_LOW_ANCHOR_CITIZENS;
-    const lowCurveSeats = Math.ceil(MANDATORIUM_LOW_ANCHOR_SEATS * Math.pow(x, MANDATORIUM_LOW_BETA));
+  const S1 = ceilDiv(MANDATORIUM_C1, MANDATORIUM_RMID);
+  const S2 = ceilDiv(MANDATORIUM_C2, MANDATORIUM_RMID);
 
-    // guard against rounding producing worse-than-linear representation
-    const totalSeats = Math.max(1, linearSeats, lowCurveSeats);
-
+  if (C <= MANDATORIUM_C1) {
+    const slope = (S1 - MANDATORIUM_S0) / (MANDATORIUM_C1 - MANDATORIUM_C0);
+    const seats = Math.ceil(MANDATORIUM_S0 + slope * (C - MANDATORIUM_C0));
     return {
-      regime: 'L (soft low-pop curve)',
-      linearSeats,
-      lowCurveSeats,
-      highAnchorSeats,
-      gentleSeats: null,
-      totalSeats,
-      seatCapApplied: false,
-      citizensPerSeat: citizens / totalSeats,
+      regime: 'L (low linear)',
+      totalSeats: Math.max(1, seats),
+      C0: MANDATORIUM_C0,
+      S0: MANDATORIUM_S0,
+      C1: MANDATORIUM_C1,
+      C2: MANDATORIUM_C2,
+      S1,
+      S2,
+      Rmid: MANDATORIUM_RMID,
+      Rhi: MANDATORIUM_RHI,
+      slopeSeatsPerCitizen: slope,
     };
   }
 
-  // Regime M: fixed 300k band
-  if (citizens <= MANDATORIUM_HIGH_ANCHOR_CITIZENS) {
-    const totalSeats = linearSeats;
+  if (C <= MANDATORIUM_C2) {
     return {
       regime: 'M (300k band)',
-      linearSeats,
-      lowCurveSeats: null,
-      highAnchorSeats,
-      gentleSeats: null,
-      totalSeats,
-      seatCapApplied: false,
-      citizensPerSeat: citizens / totalSeats,
+      totalSeats: ceilDiv(C, MANDATORIUM_RMID),
+      C0: MANDATORIUM_C0,
+      S0: MANDATORIUM_S0,
+      C1: MANDATORIUM_C1,
+      C2: MANDATORIUM_C2,
+      S1,
+      S2,
+      Rmid: MANDATORIUM_RMID,
+      Rhi: MANDATORIUM_RHI,
     };
   }
 
-  // Regime H: gentle growth after high anchor
-  const gentleSeats = Math.ceil(
-    highAnchorSeats * Math.pow(citizens / MANDATORIUM_HIGH_ANCHOR_CITIZENS, MANDATORIUM_GENTLE_ALPHA)
-  );
-  const totalSeats = Math.min(MANDATORIUM_SEAT_CAP, gentleSeats);
-
+  const extra = Math.ceil((C - MANDATORIUM_C2) / MANDATORIUM_RHI);
   return {
-    regime: 'H (gentle growth)',
-    linearSeats,
-    lowCurveSeats: null,
-    highAnchorSeats,
-    gentleSeats,
-    totalSeats,
-    seatCapApplied: totalSeats < gentleSeats,
-    citizensPerSeat: citizens / totalSeats,
+    regime: 'H (gentle high)',
+    totalSeats: S2 + extra,
+    C0: MANDATORIUM_C0,
+    S0: MANDATORIUM_S0,
+    C1: MANDATORIUM_C1,
+    C2: MANDATORIUM_C2,
+    S1,
+    S2,
+    Rmid: MANDATORIUM_RMID,
+    Rhi: MANDATORIUM_RHI,
+    extraSeatsAboveC2: extra,
   };
 };
 
@@ -183,7 +171,7 @@ const calcMandatorium = (citizens) => {
   const seatInfo = mandatoriumSeatCount(citizens);
 
   const S = seatInfo.totalSeats;
-  const S_L = roundHalfUp(0.3 * S);
+  const S_L = Math.round(0.3 * S);
   const S_D = S - S_L;
 
   const { magnitudeCounts, constituencyCount, note } = chooseStvPlan(S_D);
@@ -192,16 +180,19 @@ const calcMandatorium = (citizens) => {
     citizens,
 
     regime: seatInfo.regime,
-    linearMandators: seatInfo.linearSeats,
-    lowCurveMandators: seatInfo.lowCurveSeats,
-    lowAnchorCitizens: MANDATORIUM_LOW_ANCHOR_CITIZENS,
-    highAnchorCitizens: MANDATORIUM_HIGH_ANCHOR_CITIZENS,
-    highAnchorMandators: seatInfo.highAnchorSeats,
-    gentleMandators: seatInfo.gentleSeats,
-    seatCapApplied: seatInfo.seatCapApplied,
+    C0: seatInfo.C0,
+    S0: seatInfo.S0,
+    C1: seatInfo.C1,
+    C2: seatInfo.C2,
+    S1: seatInfo.S1,
+    S2: seatInfo.S2,
+    Rmid: seatInfo.Rmid,
+    Rhi: seatInfo.Rhi,
+    slopeSeatsPerCitizen: seatInfo.slopeSeatsPerCitizen,
+    extraSeatsAboveC2: seatInfo.extraSeatsAboveC2,
 
     totalMandators: S,
-    citizensPerMandatorOverall: seatInfo.citizensPerSeat,
+    citizensPerMandatorOverall: S > 0 ? citizens / S : Infinity,
 
     prSeats: S_L,
     prConstituencies: 1,
@@ -326,10 +317,10 @@ const renderMandatorium = (result) => {
   ].join('');
 
   const regimeExplanation = result.regime.startsWith('L')
-    ? `Regime L applies because the input population (${format(result.citizens)}) is below the low anchor of ${format(result.lowAnchorCitizens)} citizens. The low-population beta curve (β=${MANDATORIUM_LOW_BETA}) gives ${format(result.lowCurveMandators)} seats before safeguard checks, and the final total is ${format(result.totalMandators)} seats after taking the maximum against linear seats.`
+    ? `Regime L applies the low linear segment for C=${format(result.citizens)}. It linearly interpolates between (${format(result.C0)}, ${format(result.S0)}) and (${format(result.C1)}, ${format(result.S1)}) with slope ${(result.slopeSeatsPerCitizen ?? 0).toExponential(6)} seats per citizen, then rounds up to ${format(result.totalMandators)} seats.`
     : result.regime.startsWith('M')
-      ? `Regime M applies because the population (${format(result.citizens)}) is within the fixed 300k band up to ${format(result.highAnchorCitizens)} citizens. The seat total follows the base rule directly: ceil(C/300,000) = ${format(result.linearMandators)} seats.`
-      : `Regime H applies because the population (${format(result.citizens)}) exceeds the high anchor of ${format(result.highAnchorCitizens)} citizens (${format(result.highAnchorMandators)} seats at base ratio). Gentle growth with α=${MANDATORIUM_GENTLE_ALPHA} produces ${format(result.gentleMandators)} seats before cap, and the final result is ${format(result.totalMandators)}${result.seatCapApplied ? ` because the cap of ${format(MANDATORIUM_SEAT_CAP)} was applied` : ' with no cap applied'}.`;
+      ? `Regime M applies the middle band rule directly: ceil(C / ${format(result.Rmid)}) = ${format(result.totalMandators)} seats.`
+      : `Regime H applies the high segment: start from S2=${format(result.S2)} at C2=${format(result.C2)} and add ${format(result.extraSeatsAboveC2 || 0)} seat(s) using ceil((C - C2) / ${format(result.Rhi)}), for a total of ${format(result.totalMandators)} seats.`;
 
   detailsEl.innerHTML = `
     <div class="callout">
@@ -341,12 +332,11 @@ const renderMandatorium = (result) => {
     <details class="details-block">
       <summary>Audit trail</summary>
       <div class="details-content">
-        <strong>Linear seats (ceil(C / 300,000)):</strong> ${format(result.linearMandators)}<br>
-        ${result.lowCurveMandators != null ? `<strong>Low-curve seats:</strong> ${format(result.lowCurveMandators)}<br>` : ''}
-        <strong>High anchor citizens:</strong> ${format(result.highAnchorCitizens)}<br>
-        <strong>High anchor seats:</strong> ${format(result.highAnchorMandators)}<br>
-        ${result.gentleMandators != null ? `<strong>Gentle-rule seats:</strong> ${format(result.gentleMandators)}<br>` : ''}
-        <strong>Seat cap applied:</strong> ${result.seatCapApplied ? 'Yes' : 'No'}
+        <strong>C0 / S0 anchor:</strong> ${format(result.C0)} citizens → ${format(result.S0)} seats<br>
+        <strong>Kink 1 (C1 / S1):</strong> ${format(result.C1)} citizens → ${format(result.S1)} seats<br>
+        <strong>Kink 2 (C2 / S2):</strong> ${format(result.C2)} citizens → ${format(result.S2)} seats<br>
+        <strong>Middle ratio (Rmid):</strong> ${format(result.Rmid)} citizens/seat<br>
+        <strong>High ratio (Rhi):</strong> ${format(result.Rhi)} citizens/seat
       </div>
     </details>
 
